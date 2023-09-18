@@ -10,22 +10,29 @@ from torch.utils.data import Dataset, DataLoader
 
 from typing import Optional, Callable
 
-from data_augmentation import DataAugPolicy
+from src.data_augmentation import DataAugPolicy
 
 
-class WordTorchSample:
+class WordSample:
     """Word-associated information in torch format."""
 
-    def __init__(self, image: torch.Tensor, value: str, bin_threshold: int):
+    def __init__(self, imagepath: str, value: str, bin_threshold: int):
         """
         Args:
-            image: Tensorised image corresponding to word
-            word: Transcription of the assciated word
+            imagepath: Path to the image of the associated word
+            word: Transcription of the associated word
             bin_threshold: Threshold for binarization of grayscale image
         """
-        self.image = image
+        self.imagepath = imagepath
+        self.image = cv2.imread(self.imagepath, cv2.IMREAD_GRAYSCALE)
         self.value = value
         self.bin_threshold = bin_threshold
+
+    # TODO: check whether adaptive thresholding works better
+    def apply_global_binarization(self):
+        self.image = cv2.threshold(
+            self.image, self.bin_threshold, 255, cv2.THRESH_BINARY
+        )
 
 
 class DatasetIAM(Dataset):
@@ -65,6 +72,7 @@ class DatasetIAM(Dataset):
             )
 
         # TODO: preprocess and data augmentation
+        # Idea: implement preprocess as methods of WordSample class
         self.preprocess = preprocess
         self.data_augmentation = data_augmentation
 
@@ -82,24 +90,25 @@ class DatasetIAM(Dataset):
             self.words_image_path, f"{author}", f"{author}-{text}", f"{image_name}.png"
         )
 
-        image = Image.open(image_path)
-        if not torch.is_tensor(image):
-            image = transforms.functional.pil_to_tensor(
-                image
-            )  # assuming image is PIL.Image
+        # image = Image.open(image_path)
+        # if not torch.is_tensor(image):
+        #     image = transforms.functional.pil_to_tensor(
+        #         image
+        #     )  # assuming image is PIL.Image
 
-        word_sample = WordTorchSample(
-            image=image,
+        word_sample = WordSample(
+            imagepath=image_path,
             value=self.words.iloc[idx, -1],
+            bin_threshold=self.words.iloc[idx, -2],
         )
 
         return word_sample
 
 
-data_prefix = "/home/nasko/ctc-handwriting/data"
-ds = DatasetIAM(
-    words_image_path=f"{data_prefix}/words-images/",
-    words_meta_path=f"{data_prefix}/words-meta/words.new",
-)
-for i in range(10):
-    print(ds[i].image.shape)
+# data_prefix = "/home/nasko/ctc-handwriting/data"
+# ds = DatasetIAM(
+#     words_image_path=f"{data_prefix}/words-images/",
+#     words_meta_path=f"{data_prefix}/words-meta/words.new",
+# )
+# for i in range(10):
+#     print(ds[i].image.shape)
