@@ -1,3 +1,5 @@
 data/*
 !data/words-meta/
+
+__pycache__
 pat.txt

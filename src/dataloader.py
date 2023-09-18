@@ -1,37 +1,50 @@
 import os
+import cv2
 import csv
 import torch
 import pandas as pd
+
 from PIL import Image
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
+
+from typing import Optional, Callable
+
+from data_augmentation import DataAugPolicy
 
 
 class WordTorchSample:
     """Word-associated information in torch format."""
 
-    def __init__(self, image, value):
+    def __init__(self, image: torch.Tensor, value: str, bin_threshold: int):
         """
         Args:
-            image (torch.Tensor): Tensorised image corresponding to word
-            word (str): Transcription of the assciated word
+            image: Tensorised image corresponding to word
+            word: Transcription of the assciated word
+            bin_threshold: Threshold for binarization of grayscale image
         """
         self.image = image
         self.value = value
+        self.bin_threshold = bin_threshold
 
 
 class DatasetIAM(Dataset):
     """Dataset specialisation for IAM data."""
 
     def __init__(
-        self, words_image_path, words_meta_path, filter_err=False, transform=None
+        self,
+        words_image_path: str,
+        words_meta_path: str,
+        filter_err: bool = False,
+        preprocess: Optional[Callable] = None,
+        data_augmentation: Optional[DataAugPolicy] = False,
     ):
         """
         Args:
-            words_image_dir (str): Path to directory containing the word images
-            words_meta_path (str): Path to a (modified) ASCII file, i.e. path to "words.new"
-            filter_err (bool): If set to True, retains only 'ok' word segmentation samples
-            transform (): Any additional mapping for image transformations
+            words_image_dir: Path to directory containing the word images
+            words_meta_path: Path to a (modified) ASCII file, i.e. path to "words.new"
+            filter_err: If set to True, retains only 'ok' word segmentation samples
+            preprocess: Any additional mapping for image transformations
         """
 
         self.words_image_path = words_image_path
@@ -41,6 +54,7 @@ class DatasetIAM(Dataset):
             self.words_meta_path,
             delimiter=" ",
             header=None,  # take care not to lose the first row
+            skip_blank_lines=True,  # include only valid lines
             quoting=csv.QUOTE_NONE,  # manage words that are quotations marks
         )
 
@@ -50,8 +64,9 @@ class DatasetIAM(Dataset):
                 self.words[self.words.iloc[:, 1] != "ok"].index, inplace=True
             )
 
-        # TODO: transforms to boost grayscale, etc. Also, think about data augmentation...
-        self.transform = transform
+        # TODO: preprocess and data augmentation
+        self.preprocess = preprocess
+        self.data_augmentation = data_augmentation
 
     def __len__(self):
         return len(self.words)
@@ -60,21 +75,14 @@ class DatasetIAM(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        # First, fetch image as png file
         image_name = self.words.iloc[idx, 0]
         author, text, _, _ = tuple(image_name.split("-"))
 
-        image_path = self.words_image_path
         image_path = os.path.join(
-            image_path, f"{author}", f"{author}-{text}", f"{image_name}.png"
+            self.words_image_path, f"{author}", f"{author}-{text}", f"{image_name}.png"
         )
 
         image = Image.open(image_path)
-
-        if self.transform:
-            image = self.transform(image)
-
-        # Check agains self.transform
         if not torch.is_tensor(image):
             image = transforms.functional.pil_to_tensor(
                 image
@@ -93,4 +101,5 @@ ds = DatasetIAM(
     words_image_path=f"{data_prefix}/words-images/",
     words_meta_path=f"{data_prefix}/words-meta/words.new",
 )
-ds[1]
+for i in range(10):
+    print(ds[i].image.shape)
