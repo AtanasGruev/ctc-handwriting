@@ -9,39 +9,58 @@ def blank_collapse(logprobs, audio_features_len, threshold, blank_idx):
     :param blank_idx: index of blank label, i.e. N+1
     """
 
-    values, indices = torch.max(logprobs, dim=-1)  # [1, T]
+    # Apply implicit length mask from 'audio_features_len'
+    masked_logprobs = logprobs[:audio_features_len]
+
+    values, indices = torch.max(masked_logprobs, dim=-1)  # [1, T]
     mask = (values >= threshold) & (indices == blank_idx)  # [1, T]
     _, counts = torch.unique_consecutive(mask, return_counts=True)  # [1, T']
 
     # Boolean values to indicate start and end of predictions
     blank_begin, blank_end = mask[0].item(), mask[-1].item()
 
-    initial_blank_cnt = counts[0].item() if blank_begin else 0
-    final_blank_cnt = counts[-1].item() if blank_end else 0
+    # Store counts for initial and final blank predictions
+    initial_blank_cnt, final_blank_cnt = 0, 0
 
-    true_counts, false_counts = counts[::2], counts[1::2]
-    if not blank_begin:
-        true_counts, false_counts = false_counts, true_counts
+    # Store counts for all blank or non-blank predictions
+    blank_counts, non_blank_counts = counts[::2], counts[1::2]
 
-    # TODO: Re-write with torch.roll() and omit double negations
-
-    # Subtask 1: Collapse (strongly) blank labels via proper masking
-    collapse_mask = mask[initial_blank_cnt:-(final_blank_cnt)]
-    collapse_mask_shift = torch.cat((torch.tensor([False]), collapse_mask[:-1]))
-    collapse_mask = collapse_mask & (~collapse_mask_shift)
-
-    logprobs = logprobs[initial_blank_cnt:-(final_blank_cnt), :][~collapse_mask]
-
-    # Subtask 2: Adjust audio_features_len to match collapsed length
+    # Handling of blank predictions in the beginning
     if blank_begin:
-        true_counts = true_counts[1:]
-    if blank_end:
-        true_counts = true_counts[:-1]
+        initial_blank_cnt = counts[0].item()  # fix count
+    else:
+        blank_counts = non_blank_counts  # swap to match
+    initial_slice = initial_blank_cnt  # fix correct slice
 
-    # Subtract mid-blanks that now have 1-count, also initial blanks and final blanks
-    audio_features_len -= (
-        (true_counts.sum() - len(true_counts)) + initial_blank_cnt + final_blank_cnt
+    # Handling of blank predictions in the end
+    final_slice = len(mask)
+    if blank_end:
+        final_blank_cnt = counts[-1].item()  # fix count
+        final_slice = -final_blank_cnt  # fix correct slice
+
+    # Keep only mid-blanks, initial and final are recorded
+    if blank_begin:
+        blank_counts = blank_counts[1:]
+    if blank_end:
+        blank_counts = blank_counts[:-1]
+
+    # Collapsing strong blanks via masking
+    mask = mask[initial_slice:final_slice]
+    mask_shift = torch.roll(mask, shift=1)
+    mask_shift[0] = False
+
+    # Collapsed log-probablities and audio length
+    collapsed_logprobs = masked_logprobs[initial_slice:final_slice][
+        ~(mask & mask_shift)
+    ]
+    collapsed_audio_features_len = audio_features_len - (
+        (blank_counts.sum() - len(blank_counts)) + initial_blank_cnt + final_blank_cnt
     )
 
-    # assert logprobs.shape[0] == audio_features_len
-    return logprobs, audio_features_len
+    assert (
+        collapsed_logprobs.shape[0] == collapsed_audio_features_len
+    ), "Length mismatch, %s for log-probabilities and %s for audio-lengths" % (
+        collapsed_logprobs.shape[0],
+        collapsed_audio_features_len,
+    )
+    return collapsed_logprobs, collapsed_audio_features_len
