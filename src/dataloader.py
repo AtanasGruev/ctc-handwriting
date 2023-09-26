@@ -28,7 +28,6 @@ class WordSample:
         self.value = value
         self.bin_threshold = bin_threshold
 
-    # TODO: check whether adaptive thresholding works better
     def apply_global_binarization(self):
         self.image = cv2.threshold(
             self.image, self.bin_threshold, 255, cv2.THRESH_BINARY
@@ -112,3 +111,6 @@ class DatasetIAM(Dataset):
 # )
 # for i in range(10):
 #     print(ds[i].image.shape)
+
+# TODO: add DataLoader logic (diff. between train and val)
+# TODO: add PreProcessing logic

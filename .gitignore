@@ -1,7 +1,7 @@
 data/*
 !data/words-meta/
 
-playground.*
+playground/*
 
 __pycache__
 pat.txt
